@@ -115,7 +115,10 @@ tell application "Calendar"
     set eventList to {}
     set eventCount to 0
     repeat with c in calendars
-        set calEvents to (events of c whose start date >= startDate and start date <= endDate)
+        -- "events from ... to ..." uses EventKit's native range query; avoids
+        -- the "whose" clause which materialises every event's properties and
+        -- triggers remote calendar syncs.
+        set calEvents to (events of c from startDate to endDate)
         repeat with e in calEvents
             if eventCount >= ${limit} then exit repeat
             set end of eventList to {id:(uid of e), title:(summary of e), startDate:(start date of e as string), endDate:(end date of e as string), calendarName:(name of c), isAllDay:(allday event of e), location:"", notes:"", url:""}
@@ -199,7 +202,7 @@ tell application "Calendar"
     set eventList to {}
     set eventCount to 0
     repeat with c in calendars
-        set calEvents to (events of c whose start date >= startDate and start date <= endDate)
+        set calEvents to (events of c from startDate to endDate)
         repeat with e in calEvents
             if eventCount >= ${limit} then exit repeat
             set evTitle to summary of e
