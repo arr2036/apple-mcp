@@ -96,25 +96,33 @@ async function getEvents(
         
         const script = `
 tell application "Calendar"
+    set startDate to current date
+    set year of startDate to ${new Date(startDate).getFullYear()}
+    set month of startDate to ${new Date(startDate).getMonth() + 1}
+    set day of startDate to ${new Date(startDate).getDate()}
+    set hours of startDate to 0
+    set minutes of startDate to 0
+    set seconds of startDate to 0
+
+    set endDate to current date
+    set year of endDate to ${new Date(endDate).getFullYear()}
+    set month of endDate to ${new Date(endDate).getMonth() + 1}
+    set day of endDate to ${new Date(endDate).getDate()}
+    set hours of endDate to 23
+    set minutes of endDate to 59
+    set seconds of endDate to 59
+
     set eventList to {}
     set eventCount to 0
-    
-    -- Create a simple test event to return (since Calendar queries are too slow)
-    try
-        set testEvent to {}
-        set testEvent to testEvent & {id:"dummy-event-1"}
-        set testEvent to testEvent & {title:"No events available - Calendar operations too slow"}
-        set testEvent to testEvent & {calendarName:"System"}
-        set testEvent to testEvent & {startDate:"${startDate}"}
-        set testEvent to testEvent & {endDate:"${endDate}"}
-        set testEvent to testEvent & {isAllDay:false}
-        set testEvent to testEvent & {location:""}
-        set testEvent to testEvent & {notes:"Calendar.app AppleScript queries are notoriously slow and unreliable"}
-        set testEvent to testEvent & {url:""}
-        
-        set eventList to eventList & {testEvent}
-    end try
-    
+    repeat with c in calendars
+        set calEvents to (events of c whose start date >= startDate and start date <= endDate)
+        repeat with e in calEvents
+            if eventCount >= ${limit} then exit repeat
+            set end of eventList to {id:(uid of e), title:(summary of e), startDate:(start date of e as string), endDate:(end date of e as string), calendarName:(name of c), isAllDay:(allday event of e), location:"", notes:"", url:""}
+            set eventCount to eventCount + 1
+        end repeat
+        if eventCount >= ${limit} then exit repeat
+    end repeat
     return eventList
 end tell`;
 
@@ -172,9 +180,37 @@ async function searchEvents(
         
         const script = `
 tell application "Calendar"
+    set startDate to current date
+    set year of startDate to ${new Date(startDate).getFullYear()}
+    set month of startDate to ${new Date(startDate).getMonth() + 1}
+    set day of startDate to ${new Date(startDate).getDate()}
+    set hours of startDate to 0
+    set minutes of startDate to 0
+    set seconds of startDate to 0
+
+    set endDate to current date
+    set year of endDate to ${new Date(endDate).getFullYear()}
+    set month of endDate to ${new Date(endDate).getMonth() + 1}
+    set day of endDate to ${new Date(endDate).getDate()}
+    set hours of endDate to 23
+    set minutes of endDate to 59
+    set seconds of endDate to 59
+
     set eventList to {}
-    
-    -- Return empty list for search (Calendar queries are too slow)
+    set eventCount to 0
+    repeat with c in calendars
+        set calEvents to (events of c whose start date >= startDate and start date <= endDate)
+        repeat with e in calEvents
+            if eventCount >= ${limit} then exit repeat
+            set evTitle to summary of e
+            -- AppleScript string comparison is case-insensitive by default
+            if evTitle contains "${searchText.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}" then
+                set end of eventList to {id:(uid of e), title:evTitle, startDate:(start date of e as string), endDate:(end date of e as string), calendarName:(name of c), isAllDay:(allday event of e), location:"", notes:"", url:""}
+                set eventCount to eventCount + 1
+            end if
+        end repeat
+        if eventCount >= ${limit} then exit repeat
+    end repeat
     return eventList
 end tell`;
 
@@ -264,33 +300,49 @@ async function createEvent(
         console.error(`createEvent - Attempting to create event: "${title}"`);
 
         const targetCalendar = calendarName || "Calendar";
-        
+
+        // Build a date value component-by-component to avoid locale-dependent string
+        // parsing. AppleScript's `date "..."` coercion is locale-sensitive and breaks
+        // across system locales and DST boundaries.
+        const buildDate = (varName: string, d: Date) =>
+            `set ${varName} to current date
+set year of ${varName} to ${d.getFullYear()}
+set month of ${varName} to ${d.getMonth() + 1}
+set day of ${varName} to ${d.getDate()}
+set hours of ${varName} to ${d.getHours()}
+set minutes of ${varName} to ${d.getMinutes()}
+set seconds of ${varName} to 0`;
+
+        const escapedTitle = title.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const escapedLocation = (location || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const escapedNotes = (notes || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const escapedCalendar = targetCalendar.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
         const script = `
 tell application "Calendar"
-    set startDate to date "${start.toLocaleString()}"
-    set endDate to date "${end.toLocaleString()}"
-    
-    -- Find target calendar
-    set targetCal to null
-    try
-        set targetCal to calendar "${targetCalendar}"
-    on error
-        -- Use first available calendar
+    ${buildDate('startDate', start)}
+    ${buildDate('endDate', end)}
+
+    -- Find calendar by name; fall back to first calendar if not found
+    set targetCal to missing value
+    repeat with c in calendars
+        if name of c is "${escapedCalendar}" then
+            set targetCal to c
+            exit repeat
+        end if
+    end repeat
+    if targetCal is missing value then
         set targetCal to first calendar
-    end try
-    
-    -- Create the event
+    end if
+
     tell targetCal
-        set newEvent to make new event with properties {summary:"${title.replace(/"/g, '\\"')}", start date:startDate, end date:endDate, allday event:${isAllDay}}
-        
-        if "${location || ""}" ≠ "" then
-            set location of newEvent to "${(location || '').replace(/"/g, '\\"')}"
+        set newEvent to make new event with properties {summary:"${escapedTitle}", start date:startDate, end date:endDate, allday event:${isAllDay}}
+        if "${escapedLocation}" is not "" then
+            set location of newEvent to "${escapedLocation}"
         end if
-        
-        if "${notes || ""}" ≠ "" then
-            set description of newEvent to "${(notes || '').replace(/"/g, '\\"')}"
+        if "${escapedNotes}" is not "" then
+            set description of newEvent to "${escapedNotes}"
         end if
-        
         return uid of newEvent
     end tell
 end tell`;
