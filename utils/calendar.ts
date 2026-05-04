@@ -1,4 +1,9 @@
 import { runAppleScript } from 'run-applescript';
+import { execFileSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const CALENDAR_QUERY = join(dirname(fileURLToPath(import.meta.url)), '../utils/calendar-query');
 
 // Define types for our calendar events
 interface CalendarEvent {
@@ -93,59 +98,22 @@ async function getEvents(
         
         const startDate = fromDate ? fromDate : today.toISOString().split('T')[0];
         const endDate = toDate ? toDate : defaultEndDate.toISOString().split('T')[0];
-        
-        const script = `
-tell application "Calendar"
-    set startDate to current date
-    set year of startDate to ${new Date(startDate).getFullYear()}
-    set month of startDate to ${new Date(startDate).getMonth() + 1}
-    set day of startDate to ${new Date(startDate).getDate()}
-    set hours of startDate to 0
-    set minutes of startDate to 0
-    set seconds of startDate to 0
 
-    set endDate to current date
-    set year of endDate to ${new Date(endDate).getFullYear()}
-    set month of endDate to ${new Date(endDate).getMonth() + 1}
-    set day of endDate to ${new Date(endDate).getDate()}
-    set hours of endDate to 23
-    set minutes of endDate to 59
-    set seconds of endDate to 59
-
-    set eventList to {}
-    set eventCount to 0
-    repeat with c in calendars
-        -- "events from ... to ..." uses EventKit's native range query; avoids
-        -- the "whose" clause which materialises every event's properties and
-        -- triggers remote calendar syncs.
-        set calEvents to (events of c from startDate to endDate)
-        repeat with e in calEvents
-            if eventCount >= ${limit} then exit repeat
-            set end of eventList to {id:(uid of e), title:(summary of e), startDate:(start date of e as string), endDate:(end date of e as string), calendarName:(name of c), isAllDay:(allday event of e), location:"", notes:"", url:""}
-            set eventCount to eventCount + 1
-        end repeat
-        if eventCount >= ${limit} then exit repeat
-    end repeat
-    return eventList
-end tell`;
-
-        const result = await runAppleScript(script) as any;
-        
-        // Convert AppleScript result to our format - handle both array and non-array results
-        const resultArray = Array.isArray(result) ? result : [];
-        const events: CalendarEvent[] = resultArray.map((eventData: any) => ({
-            id: eventData.id || `unknown-${Date.now()}`,
-            title: eventData.title || "Untitled Event",
-            location: eventData.location || null,
-            notes: eventData.notes || null,
-            startDate: eventData.startDate ? new Date(eventData.startDate).toISOString() : null,
-            endDate: eventData.endDate ? new Date(eventData.endDate).toISOString() : null,
-            calendarName: eventData.calendarName || "Unknown Calendar",
-            isAllDay: eventData.isAllDay || false,
-            url: eventData.url || null
+        const output = execFileSync(CALENDAR_QUERY, ['list', startDate, endDate, String(limit)], {
+            timeout: CONFIG.TIMEOUT_MS,
+            encoding: 'utf8'
+        });
+        return (JSON.parse(output) as any[]).map(e => ({
+            id: e.id || `unknown-${Date.now()}`,
+            title: e.title || "Untitled Event",
+            location: e.location ?? null,
+            notes: e.notes ?? null,
+            startDate: e.startDate ?? null,
+            endDate: e.endDate ?? null,
+            calendarName: e.calendarName || "Unknown Calendar",
+            isAllDay: e.isAllDay ?? false,
+            url: null
         }));
-        
-        return events;
     } catch (error) {
         console.error(`Error getting events: ${error instanceof Error ? error.message : String(error)}`);
         return [];
@@ -180,60 +148,22 @@ async function searchEvents(
         
         const startDate = fromDate ? fromDate : today.toISOString().split('T')[0];
         const endDate = toDate ? toDate : defaultEndDate.toISOString().split('T')[0];
-        
-        const script = `
-tell application "Calendar"
-    set startDate to current date
-    set year of startDate to ${new Date(startDate).getFullYear()}
-    set month of startDate to ${new Date(startDate).getMonth() + 1}
-    set day of startDate to ${new Date(startDate).getDate()}
-    set hours of startDate to 0
-    set minutes of startDate to 0
-    set seconds of startDate to 0
 
-    set endDate to current date
-    set year of endDate to ${new Date(endDate).getFullYear()}
-    set month of endDate to ${new Date(endDate).getMonth() + 1}
-    set day of endDate to ${new Date(endDate).getDate()}
-    set hours of endDate to 23
-    set minutes of endDate to 59
-    set seconds of endDate to 59
-
-    set eventList to {}
-    set eventCount to 0
-    repeat with c in calendars
-        set calEvents to (events of c from startDate to endDate)
-        repeat with e in calEvents
-            if eventCount >= ${limit} then exit repeat
-            set evTitle to summary of e
-            -- AppleScript string comparison is case-insensitive by default
-            if evTitle contains "${searchText.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}" then
-                set end of eventList to {id:(uid of e), title:evTitle, startDate:(start date of e as string), endDate:(end date of e as string), calendarName:(name of c), isAllDay:(allday event of e), location:"", notes:"", url:""}
-                set eventCount to eventCount + 1
-            end if
-        end repeat
-        if eventCount >= ${limit} then exit repeat
-    end repeat
-    return eventList
-end tell`;
-
-        const result = await runAppleScript(script) as any;
-        
-        // Convert AppleScript result to our format - handle both array and non-array results
-        const resultArray = Array.isArray(result) ? result : [];
-        const events: CalendarEvent[] = resultArray.map((eventData: any) => ({
-            id: eventData.id || `unknown-${Date.now()}`,
-            title: eventData.title || "Untitled Event",
-            location: eventData.location || null,
-            notes: eventData.notes || null,
-            startDate: eventData.startDate ? new Date(eventData.startDate).toISOString() : null,
-            endDate: eventData.endDate ? new Date(eventData.endDate).toISOString() : null,
-            calendarName: eventData.calendarName || "Unknown Calendar",
-            isAllDay: eventData.isAllDay || false,
-            url: eventData.url || null
+        const output = execFileSync(CALENDAR_QUERY, ['search', searchText, startDate, endDate, String(limit)], {
+            timeout: CONFIG.TIMEOUT_MS,
+            encoding: 'utf8'
+        });
+        return (JSON.parse(output) as any[]).map(e => ({
+            id: e.id || `unknown-${Date.now()}`,
+            title: e.title || "Untitled Event",
+            location: e.location ?? null,
+            notes: e.notes ?? null,
+            startDate: e.startDate ?? null,
+            endDate: e.endDate ?? null,
+            calendarName: e.calendarName || "Unknown Calendar",
+            isAllDay: e.isAllDay ?? false,
+            url: null
         }));
-        
-        return events;
     } catch (error) {
         console.error(`Error searching events: ${error instanceof Error ? error.message : String(error)}`);
         return [];
@@ -260,15 +190,6 @@ async function createEvent(
     calendarName?: string
 ): Promise<{ success: boolean; message: string; eventId?: string }> {
     try {
-        const accessResult = await requestCalendarAccess();
-        if (!accessResult.hasAccess) {
-            return {
-                success: false,
-                message: accessResult.message
-            };
-        }
-
-        // Validate inputs
         if (!title.trim()) {
             return {
                 success: false,
@@ -300,62 +221,26 @@ async function createEvent(
             };
         }
 
-        console.error(`createEvent - Attempting to create event: "${title}"`);
-
         const targetCalendar = calendarName || "Calendar";
+        const fields: Record<string, unknown> = {
+            title,
+            startDate: start.toISOString(),
+            endDate: end.toISOString(),
+            isAllDay
+        };
+        if (location) fields.location = location;
+        if (notes) fields.notes = notes;
 
-        // Build a date value component-by-component to avoid locale-dependent string
-        // parsing. AppleScript's `date "..."` coercion is locale-sensitive and breaks
-        // across system locales and DST boundaries.
-        const buildDate = (varName: string, d: Date) =>
-            `set ${varName} to current date
-set year of ${varName} to ${d.getFullYear()}
-set month of ${varName} to ${d.getMonth() + 1}
-set day of ${varName} to ${d.getDate()}
-set hours of ${varName} to ${d.getHours()}
-set minutes of ${varName} to ${d.getMinutes()}
-set seconds of ${varName} to 0`;
+        const eventId = execFileSync(
+            CALENDAR_QUERY,
+            ['create', targetCalendar, JSON.stringify(fields)],
+            { timeout: CONFIG.TIMEOUT_MS, encoding: 'utf8' }
+        ).trim();
 
-        const escapedTitle = title.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-        const escapedLocation = (location || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-        const escapedNotes = (notes || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-        const escapedCalendar = targetCalendar.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-
-        const script = `
-tell application "Calendar"
-    ${buildDate('startDate', start)}
-    ${buildDate('endDate', end)}
-
-    -- Find calendar by name; fall back to first calendar if not found
-    set targetCal to missing value
-    repeat with c in calendars
-        if name of c is "${escapedCalendar}" then
-            set targetCal to c
-            exit repeat
-        end if
-    end repeat
-    if targetCal is missing value then
-        set targetCal to first calendar
-    end if
-
-    tell targetCal
-        set newEvent to make new event with properties {summary:"${escapedTitle}", start date:startDate, end date:endDate, allday event:${isAllDay}}
-        if "${escapedLocation}" is not "" then
-            set location of newEvent to "${escapedLocation}"
-        end if
-        if "${escapedNotes}" is not "" then
-            set description of newEvent to "${escapedNotes}"
-        end if
-        return uid of newEvent
-    end tell
-end tell`;
-
-        const eventId = await runAppleScript(script) as string;
-        
         return {
             success: true,
             message: `Event "${title}" created successfully.`,
-            eventId: eventId
+            eventId
         };
     } catch (error) {
         return {
@@ -409,11 +294,49 @@ end tell`;
     }
 }
 
+async function updateEvent(
+    eventId: string,
+    updates: { title?: string; startDate?: string; endDate?: string; location?: string; notes?: string }
+): Promise<{ success: boolean; message: string; eventId?: string }> {
+    try {
+        const output = execFileSync(
+            CALENDAR_QUERY,
+            ['update', eventId, JSON.stringify(updates)],
+            { timeout: CONFIG.TIMEOUT_MS, encoding: 'utf8' }
+        ).trim();
+        return { success: true, message: "Event updated.", eventId: output };
+    } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes("event not found")) {
+            return { success: false, message: "Event not found." };
+        }
+        return { success: false, message: `Error updating event: ${msg}` };
+    }
+}
+
+async function deleteEvent(eventId: string): Promise<{ success: boolean; message: string }> {
+    try {
+        execFileSync(CALENDAR_QUERY, ['delete', eventId], {
+            timeout: CONFIG.TIMEOUT_MS,
+            encoding: 'utf8'
+        });
+        return { success: true, message: "Event deleted." };
+    } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes("event not found")) {
+            return { success: false, message: "Event not found." };
+        }
+        return { success: false, message: `Error deleting event: ${msg}` };
+    }
+}
+
 const calendar = {
     searchEvents,
     openEvent,
     getEvents,
     createEvent,
+    updateEvent,
+    deleteEvent,
     requestCalendarAccess
 };
 

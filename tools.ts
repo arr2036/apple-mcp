@@ -186,8 +186,8 @@ const CALENDAR_TOOL: Tool = {
     properties: {
       operation: {
         type: "string",
-        description: "Operation to perform: 'search', 'open', 'list', or 'create'",
-        enum: ["search", "open", "list", "create"]
+        description: "Operation to perform: 'search', 'open', 'list', 'create', 'update', or 'delete'",
+        enum: ["search", "open", "list", "create", "update", "delete"]
       },
       searchText: {
         type: "string",
@@ -195,7 +195,7 @@ const CALENDAR_TOOL: Tool = {
       },
       eventId: {
         type: "string",
-        description: "ID of the event to open (required for open operation)"
+        description: "ID of the event (required for open and delete operations)"
       },
       limit: {
         type: "number",

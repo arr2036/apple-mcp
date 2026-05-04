@@ -1080,6 +1080,30 @@ end tell`;
 								};
 							}
 
+							case "update": {
+								const { eventId, title, startDate, endDate, location, notes } = args;
+								if (!eventId) throw new Error("eventId is required for update operation");
+								const result = await calendarModule.updateEvent(eventId, {
+									title, startDate, endDate, location, notes
+								});
+								return {
+									content: [{ type: "text", text: result.success
+										? `${result.message}${result.eventId ? `\nEvent ID: ${result.eventId}` : ""}`
+										: `Error updating event: ${result.message}` }],
+									isError: !result.success,
+								};
+							}
+
+							case "delete": {
+								const { eventId } = args;
+								if (!eventId) throw new Error("eventId is required for delete operation");
+								const result = await calendarModule.deleteEvent(eventId);
+								return {
+									content: [{ type: "text", text: result.success ? result.message : `Error deleting event: ${result.message}` }],
+									isError: !result.success,
+								};
+							}
+
 							default:
 								throw new Error(`Unknown calendar operation: ${operation}`);
 						}
@@ -1547,7 +1571,7 @@ function isRemindersArgs(args: unknown): args is {
 
 
 function isCalendarArgs(args: unknown): args is {
-	operation: "search" | "open" | "list" | "create";
+	operation: "search" | "open" | "list" | "create" | "update" | "delete";
 	searchText?: string;
 	eventId?: string;
 	limit?: number;
@@ -1570,7 +1594,7 @@ function isCalendarArgs(args: unknown): args is {
 		return false;
 	}
 
-	if (!["search", "open", "list", "create"].includes(operation)) {
+	if (!["search", "open", "list", "create", "update", "delete"].includes(operation)) {
 		return false;
 	}
 
@@ -1582,7 +1606,7 @@ function isCalendarArgs(args: unknown): args is {
 		}
 	}
 
-	if (operation === "open") {
+	if (operation === "open" || operation === "update" || operation === "delete") {
 		const { eventId } = args as { eventId?: unknown };
 		if (typeof eventId !== "string") {
 			return false;
